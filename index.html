@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IWannaGetTheFlag — CTF Test Map</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0b0d12;color:#eee;font-family:Arial,sans-serif;overflow:hidden}
+#wrap{height:100vh;display:flex;flex-direction:column}
+header{height:58px;background:#11151d;border-bottom:1px solid #2b3240;display:flex;align-items:center;padding:0 18px;gap:18px}
+h1{font-size:19px;margin:0}
+#status{margin-left:auto;font-size:13px;color:#aeb7c8}
+canvas{display:block;width:100%;height:calc(100vh - 58px);background:#161a22}
+#help{position:fixed;left:14px;bottom:12px;background:#111a;padding:9px 12px;border:1px solid #394253;border-radius:8px;font-size:12px;color:#cbd2df}
+#win{display:none;position:fixed;inset:0;background:#000b;align-items:center;justify-content:center}
+.card{background:#151a23;border:1px solid #4b5568;border-radius:14px;padding:28px 34px;text-align:center;box-shadow:0 15px 50px #000}
+.card h2{margin:0 0 10px}
+.flag{font-family:monospace;color:#79ffa8;font-size:17px;word-break:break-all;margin:18px 0}
+button{background:#e8edf5;border:0;border-radius:8px;padding:9px 15px;cursor:pointer;font-weight:bold}
+</style>
+</head>
+<body>
+<div id="wrap">
+<header>
+<h1 id="gameTitle">IWannaGetTheFlag</h1>
+<div id="status">TEST MAP · CHECKPOINT 0</div>
+</header>
+<canvas id="game"></canvas>
+</div>
+<div id="help">← → 이동 · Z / Space 점프 · R 재시작 · 목표: FLAG까지 도달</div>
+
+<div id="win">
+  <div class="card">
+    <h2>FLAG CAPTURED!</h2>
+    <div id="flagOutput" class="flag">FLAG LOCKED</div>
+    <div>Cookie challenge cleared.</div><br>
+    <button onclick="location.reload()">다시 시작</button>
+  </div>
+</div>
+
+<script>
+const canvas=document.getElementById("game"),ctx=canvas.getContext("2d");
+let W,H,scale=1;
+function resize(){W=canvas.width=innerWidth;H=canvas.height=innerHeight-58;scale=Math.max(1,Math.min(W/1200,H/650));}
+addEventListener("resize",resize); resize();
+
+const keys={};
+addEventListener("keydown",e=>{
+  keys[e.key.toLowerCase()]=true;
+  if(["arrowleft","arrowright"," ","z"].includes(e.key.toLowerCase()))e.preventDefault();
+  if(e.key.toLowerCase()==="r") respawn();
+});
+addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
+
+const levelW=3600;
+const platforms=[
+ [0,570,520,80],[610,570,390,80],[1080,500,330,150],[1490,570,360,80],
+ [1940,500,300,150],[2300,570,430,80],[2790,470,300,180],[3160,570,440,80],
+ // upper route
+ [260,410,170,24],[760,380,170,24],[1260,330,180,24],[1660,390,170,24],
+ [2070,300,180,24],[2440,390,160,24],[2890,300,170,24],[3260,390,170,24]
+];
+const spikes=[
+ [520,550,90,20],[1000,550,80,20],[1410,550,80,20],[1850,550,90,20],
+ [2240,550,60,20],[2730,550,60,20],[3090,550,70,20],
+ [430,390,30,20],[920,360,30,20],[1440,310,30,20],[1800,370,30,20],
+ [2250,280,30,20],[2600,370,30,20],[3050,280,30,20]
+];
+const checkpoints=[
+ {x:40,y:520},{x:1130,y:450},{x:1990,y:450},{x:2840,y:420}
+];
+const flag={x:3470,y:500,w:28,h:70};
+
+let player,cam=0,checkpoint=0,won=false;
+function resetPlayer(){
+ const c=checkpoints[checkpoint];
+ player={x:c.x,y:c.y,w:24,h:34,vx:0,vy:0,on:false};
+}
+function respawn(){if(!won)resetPlayer()}
+resetPlayer();
+
+function rectHit(a,b){
+ return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
+}
+
+/*
+  IWannaGetTheFlag - CTF challenge layer
+
+  Intended solve path:
+  1. Inspect page source.
+  2. Find the "CTF_NOTE" below.
+  3. Inspect this script and discover the cookie name.
+  4. Use the clue to derive the required cookie value.
+  5. Change the cookie in DevTools -> Application/Storage -> Cookies.
+  6. Reload. The title and final screen reveal the flag.
+
+  CTF_NOTE:
+  "The browser remembers what you tell it.
+   The key is fw_gate.
+   The gate opens when the value is the ROT13 form of:
+   VJGTS{guvf_vf_gur_synt_cneg_gjb_pbzzvat_fbbav}"
+
+  This is deliberately a beginner web-CTF challenge.
+*/
+const CTF_COOKIE_NAME = "fw_gate";
+
+// ROT13 decoder. The clue provides the encoded gate value.
+function rot13(s){
+  return s.replace(/[a-zA-Z]/g, c => {
+    const base = c <= "Z" ? 65 : 97;
+    return String.fromCharCode((c.charCodeAt(0)-base+13)%26+base);
+  });
+}
+
+const CTF_EXPECTED = rot13("VJGTS{guvf_vf_gur_synt_cneg_gjb_pbzzvat_fbbav}");
+
+function getCookie(name){
+  const prefix = name + "=";
+  const found = document.cookie.split("; ").find(x => x.startsWith(prefix));
+  return found ? decodeURIComponent(found.slice(prefix.length)) : "";
+}
+
+function ctfUnlocked(){
+  return getCookie(CTF_COOKIE_NAME) === CTF_EXPECTED;
+}
+
+function applyCTFState(){
+  const title=document.getElementById("gameTitle");
+  const hint=document.getElementById("ctfHint");
+  if(ctfUnlocked()){
+    title.textContent=CTF_EXPECTED;
+    title.style.color="#79ffa8";
+    hint.innerHTML="<b style='color:#79ffa8'>COOKIE ACCEPTED</b><br>정확한 gate 값이 확인되었다.<br>이제 FLAG를 획득해 보자.";
+  }
+}
+
+// Deliberately creates a harmless initial cookie so the participant
+// has something visible to inspect in DevTools.
+if(!document.cookie.includes(CTF_COOKIE_NAME+"=")){
+  document.cookie = CTF_COOKIE_NAME+"=locked; path=/; SameSite=Lax";
+}
+
+applyCTFState();
+
+function update(){
+ if(won)return;
+ const left=keys["arrowleft"]||keys["a"], right=keys["arrowright"]||keys["d"];
+ if(left)player.vx-=0.65;
+ if(right)player.vx+=0.65;
+ if(!left&&!right)player.vx*=0.78;
+ player.vx=Math.max(-5,Math.min(5,player.vx));
+ if((keys["z"]||keys[" "]||keys["arrowup"])&&player.on){player.vy=-11;player.on=false}
+ player.vy+=0.55;
+ if(player.vy>14)player.vy=14;
+
+ // horizontal
+ player.x+=player.vx;
+ if(player.x<0)player.x=0;
+ if(player.x>levelW-player.w)player.x=levelW-player.w;
+
+ // vertical collision
+ const oldY=player.y;
+ player.y+=player.vy;
+ player.on=false;
+ for(const p of platforms){
+   if(player.x+player.w>p[0]&&player.x<p[0]+p[2]&&
+      oldY+player.h<=p[1]&&player.y+player.h>=p[1]&&player.vy>=0){
+      player.y=p[1]-player.h;player.vy=0;player.on=true;
+   }
+ }
+ // ceiling collision
+ for(const p of platforms){
+   if(player.x+player.w>p[0]&&player.x<p[0]+p[2]&&
+      oldY>=p[1]+p[3]&&player.y<=p[1]+p[3]&&player.vy<0){
+      player.y=p[1]+p[3];player.vy=0;
+   }
+ }
+ // spikes
+ for(const s of spikes){
+   const hit={x:s[0]+3,y:s[1]+5,w:s[2]-6,h:s[3]-5};
+   if(rectHit(player,hit)){respawn();return}
+ }
+ // checkpoints
+ for(let i=1;i<checkpoints.length;i++){
+   if(player.x>checkpoints[i].x-10 && checkpoint<i){
+     checkpoint=i;
+     document.getElementById("status").textContent="TEST MAP · CHECKPOINT "+checkpoint;
+   }
+ }
+ if(rectHit(player,flag)){
+   won=true;
+   const output=document.getElementById("flagOutput");
+   if(ctfUnlocked()){
+     output.textContent=CTF_EXPECTED;
+     output.style.color="#79ffa8";
+   }else{
+     output.textContent="FLAG LOCKED — check the cookie challenge";
+     output.style.color="#ff8793";
+   }
+   document.getElementById("win").style.display="flex";
+ }
+ if(player.y>H+120)respawn();
+
+ cam+=(player.x-W*0.38-cam)*0.12;
+ cam=Math.max(0,Math.min(levelW-W,cam));
+}
+
+function draw(){
+ ctx.clearRect(0,0,W,H);
+ ctx.save();ctx.translate(-cam,0);
+
+ // background
+ ctx.fillStyle="#161a22";ctx.fillRect(cam,0,W,H);
+ for(let x=Math.floor(cam/100)*100;x<cam+W+100;x+=100){
+   ctx.fillStyle="#1b202a";ctx.fillRect(x,0,1,H);
+ }
+ ctx.fillStyle="#252c38";
+ for(let x=0;x<levelW;x+=80)ctx.fillRect(x,620,45,2);
+
+ // platforms
+ for(const p of platforms){
+   ctx.fillStyle="#d9dee8";ctx.fillRect(...p);
+   ctx.fillStyle="#737d8e";ctx.fillRect(p[0],p[1],p[2],5);
+ }
+ // spikes
+ for(const s of spikes){
+   ctx.fillStyle="#ff5666";
+   const count=Math.max(1,Math.floor(s[2]/15));
+   for(let i=0;i<count;i++){
+     const x=s[0]+i*(s[2]/count);
+     ctx.beginPath();ctx.moveTo(x,s[1]+s[3]);ctx.lineTo(x+s[2]/count/2,s[1]);ctx.lineTo(x+s[2]/count,s[1]+s[3]);ctx.closePath();ctx.fill();
+   }
+ }
+ // checkpoint markers
+ checkpoints.forEach((c,i)=>{
+   ctx.fillStyle=i<=checkpoint?"#65e6a1":"#596274";
+   ctx.fillRect(c.x,c.y-35,5,35);
+   ctx.beginPath();ctx.arc(c.x+2.5,c.y-40,5,0,Math.PI*2);ctx.fill();
+ });
+ // flag
+ ctx.fillStyle="#eee";ctx.fillRect(flag.x,flag.y,4,70);
+ ctx.fillStyle="#7dffad";
+ ctx.beginPath();ctx.moveTo(flag.x+4,flag.y);ctx.lineTo(flag.x+32,flag.y+10);ctx.lineTo(flag.x+4,flag.y+22);ctx.closePath();ctx.fill();
+ ctx.font="bold 13px Arial";ctx.fillStyle="#7dffad";ctx.fillText("FLAG",flag.x-2,flag.y-10);
+
+ // player
+ ctx.fillStyle="#68a7ff";ctx.fillRect(player.x,player.y,player.w,player.h);
+ ctx.fillStyle="#fff";ctx.fillRect(player.x+5,player.y+7,5,5);ctx.fillRect(player.x+15,player.y+7,5,5);
+
+ // labels
+ ctx.font="bold 14px Arial";
+ ctx.fillStyle="#8e98aa";
+ ctx.fillText("START",25,545);
+ ctx.fillText("CHECKPOINT 1",1090,475);
+ ctx.fillText("CHECKPOINT 2",1950,475);
+ ctx.fillText("CHECKPOINT 3",2800,445);
+ ctx.fillStyle="#ff8793";ctx.fillText("WATCH YOUR STEP",670,545);
+ ctx.restore();
+ requestAnimationFrame(loop);
+}
+function loop(){update();draw()}
+loop();
+</script>
+</body>
+</html>
