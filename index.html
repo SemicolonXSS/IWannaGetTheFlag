@@ -28,7 +28,7 @@ button{background:#e8edf5;border:0;border-radius:8px;padding:9px 15px;cursor:poi
 </header>
 <canvas id="game"></canvas>
 </div>
-<div id="help">← → 이동 · Z / Space 점프 · R 재시작 · 목표: FLAG까지 도달</div>
+<div id="help">← → 이동 · Z / Space 점프 · R 재시작</div>
 
 <div id="win">
   <div class="card">
@@ -84,28 +84,7 @@ function rectHit(a,b){
  return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
 }
 
-/*
-  IWannaGetTheFlag - CTF challenge layer
-
-  Intended solve path:
-  1. Inspect page source.
-  2. Find the "CTF_NOTE" below.
-  3. Inspect this script and discover the cookie name.
-  4. Use the clue to derive the required cookie value.
-  5. Change the cookie in DevTools -> Application/Storage -> Cookies.
-  6. Reload. The title and final screen reveal the flag.
-
-  CTF_NOTE:
-  "The browser remembers what you tell it.
-   The key is fw_gate.
-   The gate opens when the value is the ROT13 form of:
-   VJGTS{guvf_vf_gur_synt_cneg_gjb_pbzzvat_fbbav}"
-
-  This is deliberately a beginner web-CTF challenge.
-*/
 const CTF_COOKIE_NAME = "fw_gate";
-
-// ROT13 decoder. The clue provides the encoded gate value.
 function rot13(s){
   return s.replace(/[a-zA-Z]/g, c => {
     const base = c <= "Z" ? 65 : 97;
@@ -135,8 +114,6 @@ function applyCTFState(){
   }
 }
 
-// Deliberately creates a harmless initial cookie so the participant
-// has something visible to inspect in DevTools.
 if(!document.cookie.includes(CTF_COOKIE_NAME+"=")){
   document.cookie = CTF_COOKIE_NAME+"=locked; path=/; SameSite=Lax";
 }
